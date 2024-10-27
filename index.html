@@ -1,0 +1,221 @@
+<html><head><base href="https://websim.ai/pdf-extractor/"><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Extrator de PDF - Campos Fixos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 20px; background-color: #f0f0f0; }
+  .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  h1, h2 { color: #333; text-align: center; }
+  #fileInput { display: none; }
+  label, button { display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; cursor: pointer; border-radius: 4px; border: none; font-size: 16px; margin: 5px; }
+  label:hover, button:hover { background-color: #45a049; }
+  #pdfViewer { width: 100%; height: 500px; border: 1px solid #ddd; margin-top: 20px; overflow: auto; position: relative; }
+  #extractedData { margin-top: 20px; }
+  .extraction-field { margin-bottom: 10px; }
+  .extraction-field input { margin-right: 10px; padding: 5px; width: 200px; }
+  #textLayer { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; opacity: 0.2; line-height: 1.0; }
+  #textLayer > span { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+  #textLayer .highlight { margin: -1px; padding: 1px; background-color: #b4d5fe; border-radius: 4px; }
+  #textLayer .highlight.selected { background-color: #fcf0b4; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Extrator de PDF - Campos Fixos</h1>
+  <label for="fileInput">Escolher arquivo PDF</label>
+  <input type="file" id="fileInput" accept="application/pdf">
+  
+  <div id="pdfViewer">
+    <canvas id="pdfCanvas"></canvas>
+    <div id="textLayer"></div>
+  </div>
+  
+  <h2>Campos para Extração</h2>
+  <div id="extractionFields">
+    <div class="extraction-field">
+      <input type="text" value="Destinatário" readonly>
+      <button onclick="extractSelectedText(this)">Extrair Seleção</button>
+    </div>
+    <div class="extraction-field">
+      <input type="text" value="Emitente" readonly>
+      <button onclick="extractSelectedText(this)">Extrair Seleção</button>
+    </div>
+    <div class="extraction-field">
+      <input type="text" value="Valor Total" readonly>
+      <button onclick="extractSelectedText(this)">Extrair Seleção</button>
+    </div>
+    <div class="extraction-field">
+      <input type="text" value="Local de Partida" readonly>
+      <button onclick="extractSelectedText(this)">Extrair Seleção</button>
+    </div>
+    <div class="extraction-field">
+      <input type="text" value="Destino" readonly>
+      <button onclick="extractSelectedText(this)">Extrair Seleção</button>
+    </div>
+    <div class="extraction-field">
+      <input type="text" value="Incoterm" readonly>
+      <button onclick="extractSelectedText(this)">Extrair Seleção</button>
+    </div>
+  </div>
+  
+  <div id="extractedData"></div>
+  <button id="printButton" style="display: none; margin-top: 20px;">Imprimir Dados Extraídos</button>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.worker.min.js';
+
+let pdfDoc = null;
+let pageNum = 1;
+let pageRendering = false;
+let pageNumPending = null;
+let scale = 1.5;
+let canvas = document.getElementById('pdfCanvas');
+let ctx = canvas.getContext('2d');
+
+function renderPage(num) {
+  pageRendering = true;
+  pdfDoc.getPage(num).then(function(page) {
+    let viewport = page.getViewport({scale: scale});
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    let renderContext = {
+      canvasContext: ctx,
+      viewport: viewport
+    };
+    let renderTask = page.render(renderContext);
+
+    renderTask.promise.then(function() {
+      pageRendering = false;
+      if (pageNumPending !== null) {
+        renderPage(pageNumPending);
+        pageNumPending = null;
+      }
+    });
+
+    page.getTextContent().then(function(textContent) {
+      let textLayer = document.getElementById('textLayer');
+      textLayer.innerHTML = '';
+      textLayer.style.left = canvas.offsetLeft + 'px';
+      textLayer.style.top = canvas.offsetTop + 'px';
+      textLayer.style.height = canvas.height + 'px';
+      textLayer.style.width = canvas.width + 'px';
+
+      pdfjsLib.renderTextLayer({
+        textContent: textContent,
+        container: textLayer,
+        viewport: viewport,
+        textDivs: []
+      });
+    });
+  });
+}
+
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  let file = e.target.files[0];
+  if (file.type !== 'application/pdf') {
+    alert('Por favor, selecione um arquivo PDF.');
+    return;
+  }
+
+  let fileReader = new FileReader();
+  fileReader.onload = function() {
+    let typedarray = new Uint8Array(this.result);
+
+    pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+      pdfDoc = pdf;
+      renderPage(pageNum);
+    });
+  };
+  fileReader.readAsArrayBuffer(file);
+});
+
+function extractSelectedText(button) {
+  let selection = window.getSelection();
+  let text = selection.toString();
+  if(text) {
+    let inputField = button.previousElementSibling;
+    let fieldName = inputField.value;
+    let extractedDataDiv = document.getElementById('extractedData');
+    
+    // Verifica se já existe um elemento para este campo
+    let existingElement = extractedDataDiv.querySelector(`[data-field="${fieldName}"]`);
+    if (existingElement) {
+      existingElement.innerHTML = `<strong>${fieldName}:</strong> ${text}`;
+    } else {
+      let dataItem = document.createElement('div');
+      dataItem.setAttribute('data-field', fieldName);
+      dataItem.innerHTML = `<strong>${fieldName}:</strong> ${text}`;
+      extractedDataDiv.appendChild(dataItem);
+    }
+    
+    document.getElementById('printButton').style.display = 'block';
+  } else {
+    alert('Por favor, selecione algum texto no PDF antes de extrair.');
+  }
+}
+
+document.getElementById('printButton').addEventListener('click', function() {
+  if (typeof jspdf === 'undefined') {
+    console.error('jsPDF não está definido. Verifique se a biblioteca foi carregada corretamente.');
+    return;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  doc.setFontSize(16);
+  doc.text('Dados Extraídos do PDF', 20, 20);
+
+  doc.setFontSize(12);
+  let yPos = 40;
+  Array.from(document.getElementById('extractedData').children).forEach(item => {
+    doc.text(item.innerText, 20, yPos);
+    yPos += 10;
+  });
+
+  doc.save('dados_extraidos.pdf');
+});
+
+// Adicionar funcionalidade de highlight ao selecionar texto
+document.getElementById('textLayer').addEventListener('mouseup', function() {
+  let selection = window.getSelection();
+  if (selection.rangeCount > 0) {
+    let range = selection.getRangeAt(0);
+    let selectedElements = getSelectedElements(range);
+
+    // Remove previous highlights
+    let highlights = document.querySelectorAll('.highlight');
+    highlights.forEach(h => h.classList.remove('highlight', 'selected'));
+
+    // Add new highlights
+    selectedElements.forEach(el => {
+      el.classList.add('highlight', 'selected');
+    });
+  }
+});
+
+function getSelectedElements(range) {
+  let elements = [];
+  if (range && range.startContainer && range.endContainer) {
+    let startElement = range.startContainer.parentElement;
+    let endElement = range.endContainer.parentElement;
+
+    if (startElement && endElement) {
+      elements.push(startElement);
+
+      let currentElement = startElement.nextSibling;
+      while (currentElement && currentElement !== endElement) {
+        elements.push(currentElement);
+        currentElement = currentElement.nextSibling;
+      }
+
+      if (startElement !== endElement) {
+        elements.push(endElement);
+      }
+    }
+  }
+  return elements;
+}
+</script>
+</body></html>
